@@ -1,4 +1,4 @@
-import { Clanker } from 'clanker-sdk';
+import { Clanker } from 'clanker-sdk/v4';
 import { createPublicClient, createWalletClient, http, type PublicClient } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base } from 'viem/chains';
@@ -17,7 +17,7 @@ const walletClient = account ? createWalletClient({
   transport: http(config.baseRpcUrl),
 }) : null;
 
-// Initialize Clanker SDK
+// Initialize Clanker SDK v4
 const clanker = (account && walletClient) ? new Clanker({
   publicClient,
   wallet: walletClient,
@@ -56,17 +56,15 @@ export async function deployPetToken(params: DeployParams): Promise<DeployResult
 
     console.log(`🚀 Deploying ${params.name} ($${params.symbol}) via Clanker SDK v4...`);
 
-    // Deploy using Clanker SDK
-    const tokenAddress = await clanker.deployToken({
+    // Deploy using Clanker SDK v4
+    const { txHash, waitForTransaction, error } = await clanker.deploy({
       name: params.name,
       symbol: params.symbol,
+      tokenAdmin: account.address,
       image: params.imageUrl,
       metadata: {
-        description: params.description,
-        socialMediaUrls: [
-          params.website ? { platform: 'website', url: params.website } : null,
-          params.twitter ? { platform: 'x', url: `https://twitter.com/${params.twitter.replace('@', '')}` } : null,
-        ].filter(Boolean) as { platform: string; url: string }[],
+        description: `${params.description}\n\n🐾 {LAUNCHED WITH PETPAD}`,
+        socialMediaUrls: [],
         auditUrls: [],
       },
       context: {
@@ -75,21 +73,42 @@ export async function deployPetToken(params: DeployParams): Promise<DeployResult
         messageId: '',
         id: '',
       },
-      rewardsConfig: {
-        creatorReward: 80, // 80% to agent
-        creatorAdmin: params.agentWallet,
-        creatorRewardRecipient: params.agentWallet,
-        interfaceAdmin: config.platformWallet,
-        interfaceRewardRecipient: config.platformWallet,
+      // v4 rewards format - recipients array
+      rewards: {
+        recipients: [
+          {
+            recipient: params.agentWallet,
+            admin: params.agentWallet,
+            bps: 8000, // 80%
+            token: 'Paired',
+          },
+          {
+            recipient: config.platformWallet,
+            admin: config.platformWallet,
+            bps: 2000, // 20%
+            token: 'Paired',
+          },
+        ],
       },
     });
+
+    if (error) {
+      console.error('❌ Deploy error:', error);
+      return { success: false, error: String(error) };
+    }
+
+    console.log(`📤 TX: ${txHash}`);
+
+    // Wait for transaction and get token address
+    const result = await waitForTransaction();
+    const tokenAddress = result.address || '';
 
     console.log(`✅ Deployed: ${tokenAddress}`);
 
     return {
       success: true,
       tokenAddress,
-      txHash: '',
+      txHash,
       clankerUrl: `https://clanker.world/clanker/${tokenAddress}`,
       explorerUrl: `https://basescan.org/token/${tokenAddress}`,
     };
