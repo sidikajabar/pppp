@@ -74,7 +74,7 @@ api.post('/launch', async (c) => {
     // Generate pixel art
     const launchId = nanoid();
     const { url: imageUrl } = savePixelArt(petData.petType, launchId);
-    const fullImageUrl = `https://petpad.xyz${imageUrl}`;
+    const fullImageUrl = `https://aipetpad.world${imageUrl}`;
 
     // Create record
     const postUrl = `https://www.moltbook.com/post/${post_id}`;
