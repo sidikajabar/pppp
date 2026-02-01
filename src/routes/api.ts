@@ -74,7 +74,7 @@ api.post('/launch', async (c) => {
     // Generate pixel art
     const launchId = nanoid();
     const { url: imageUrl } = savePixelArt(petData.petType, launchId);
-    const fullImageUrl = `https://petpad.xyz${imageUrl}`; // Update with your domain
+    const fullImageUrl = `https://petpad.xyz${imageUrl}`;
 
     // Create record
     const postUrl = `https://www.moltbook.com/post/${post_id}`;
@@ -207,38 +207,42 @@ api.get('/stats', (c) => {
     success: true,
     stats: { totalLaunches: count },
     petTypes: byType.map(p => ({ type: p.pet_type, emoji: config.petEmojis[p.pet_type], count: p.count })),
-    // Debug routes - add these at the end of your api.ts file
+  });
+});
+
+// ===== DEBUG ROUTES =====
 
 // Check all launches in database
-app.get('/api/debug/launches', (req, res) => {
+api.get('/debug/launches', (c) => {
   try {
     const rows = db.prepare('SELECT * FROM launches').all();
-    res.json({ success: true, launches: rows });
+    return c.json({ success: true, launches: rows });
   } catch (error) {
-    res.json({ success: false, error: String(error) });
+    return c.json({ success: false, error: String(error) });
   }
 });
 
 // Delete a launch by post_id
-app.delete('/api/debug/launch/:postId', (req, res) => {
+api.delete('/debug/launch/:postId', (c) => {
   try {
-    db.prepare('DELETE FROM launches WHERE post_id = ?').run(req.params.postId);
-    res.json({ success: true, message: 'Launch deleted' });
+    const postId = c.req.param('postId');
+    db.prepare('DELETE FROM launches WHERE post_id = ?').run(postId);
+    db.prepare('DELETE FROM processed_posts WHERE post_id = ?').run(postId);
+    return c.json({ success: true, message: 'Launch deleted' });
   } catch (error) {
-    res.json({ success: false, error: String(error) });
+    return c.json({ success: false, error: String(error) });
   }
 });
 
 // Delete a launch by symbol/ticker
-app.delete('/api/debug/ticker/:symbol', (req, res) => {
+api.delete('/debug/ticker/:symbol', (c) => {
   try {
-    db.prepare('DELETE FROM launches WHERE symbol = ?').run(req.params.symbol);
-    res.json({ success: true, message: 'Ticker deleted' });
+    const symbol = c.req.param('symbol');
+    db.prepare('DELETE FROM launches WHERE symbol = ?').run(symbol);
+    return c.json({ success: true, message: 'Ticker deleted' });
   } catch (error) {
-    res.json({ success: false, error: String(error) });
+    return c.json({ success: false, error: String(error) });
   }
-});
-  });
 });
 
 export default api;
