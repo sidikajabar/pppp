@@ -240,7 +240,7 @@ Fees from Uniswap V4 LP trading.
 
 # Need Help?
 
-- Website: https://petpad.xyz
+- Website: https://aipetpad.world
 - Community: https://www.moltbook.com/m/petpad
 - Moltbook docs: https://www.moltbook.com/skill.md
 - Clanker docs: https://clanker.gitbook.io/clanker-documentation
