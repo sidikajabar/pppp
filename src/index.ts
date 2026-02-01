@@ -1,89 +1,88 @@
-// src/db/index.ts
-import { Database } from 'bun:sqlite';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import { serveStatic } from 'hono/bun';
 
-let db: Database;
+import config, { validateConfig } from './config';
+import './db';  // init SQLite (sekarang sudah OK dari log kamu)
 
-try {
-  // Gunakan env var untuk path DB (wajib di Railway)
-  // Default fallback untuk development lokal
-  const dbPath = process.env.DB_PATH || './data/petpad.db';
+import api from './routes/api';
 
-  // Pastikan direktori parent ada (untuk lokal dev)
-  // Di Railway volume sudah di-mount, jadi aman
-  await Bun.$`mkdir -p ${dbPath.split('/').slice(0, -1).join('/')}`.catch(() => {});
+validateConfig();
 
-  db = new Database(dbPath, {
-    create: true,          // buat file kalau belum ada
-    readwrite: true,
-    // timeout: 5000,      // default sudah bagus, tapi bisa diatur
-    // strict: true,       // lebih ketat parsing SQL (opsional, aktifkan kalau mau)
-  });
+// ────────────────────────────────────────────────
+// Buat instance Hono di sini (WAJIB sebelum export)
+// ────────────────────────────────────────────────
+const app = new Hono<{
+  Variables: {
+    // extend kalau butuh context seperti user/auth nanti
+  };
+}>();
 
-  // Verifikasi koneksi & write access
-  db.exec('PRAGMA user_version = 1;'); // test write
+// Global Middleware
+app.use('*', logger());
 
-  // Optimasi performa & concurrency di container
-  db.exec('PRAGMA journal_mode = WAL;');          // Write-Ahead Logging
-  db.exec('PRAGMA synchronous = NORMAL;');        // balance speed & durability
-  db.exec('PRAGMA busy_timeout = 5000;');         // tunggu lock lebih lama
-  db.exec('PRAGMA mmap_size = 3000000000;');      // memory map (untuk DB besar, opsional)
-  db.exec('PRAGMA cache_size = -20000;');         // 20MB cache (dalam halaman 4KB)
+// CORS – whitelist di production nanti
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400,
+  credentials: true,
+}));
 
-  console.log(`✅ SQLite connected successfully`);
-  console.log(`   Path: ${dbPath}`);
-  console.log(`   WAL mode: enabled`);
-  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+// Static files
+app.use('/pets/*', serveStatic({ root: './public' }));
+app.use('/static/*', serveStatic({ root: './public' }));
 
-  // ────────────────────────────────────────────────
-  // Inisialisasi schema / migration sederhana
-  // Jalankan sekali saat start (idempoten dengan IF NOT EXISTS)
-  // ────────────────────────────────────────────────
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      name            TEXT NOT NULL,
-      email           TEXT UNIQUE,
-      password_hash   TEXT,
-      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+// skill.md
+app.get('/skill.md', async (c) => {
+  const file = Bun.file('./public/skill.md');
+  if (!(await file.exists())) return c.text('Not found', 404);
+  return c.body(await file.text(), 200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+});
 
-    CREATE TABLE IF NOT EXISTS pets (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id         INTEGER REFERENCES users(id) ON DELETE CASCADE,
-      name            TEXT NOT NULL,
-      type            TEXT,           -- dog, cat, bird, etc
-      breed           TEXT,
-      birth_date      DATE,
-      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+// API routes
+app.route('/api', api);
 
-    -- Tambahkan index kalau sering query
-    CREATE INDEX IF NOT EXISTS idx_pets_user_id ON pets(user_id);
-  `);
+// SPA fallback
+app.get('/', serveStatic({ path: './public/index.html' }));
 
-  console.log('   Schema initialized / migrated');
+app.get('*', async (c) => {
+  if (c.req.path.startsWith('/api/')) {
+    return c.json({ error: 'Not Found' }, 404);
+  }
+  const file = Bun.file('./public/index.html');
+  if (!(await file.exists())) return c.text('Frontend not found', 500);
+  return c.body(await file.text(), 200, { 'Content-Type': 'text/html; charset=utf-8' });
+});
 
-} catch (err) {
-  console.error('❌ Failed to initialize SQLite database:');
-  console.error(err);
-  console.error('   Path attempted:', process.env.DB_PATH || './data/petpad.db');
-  console.error('   Possible causes:');
-  console.error('   - Volume mount path salah di Railway');
-  console.error('   - Permission denied pada direktori DB');
-  console.error('   - DB file corrupt atau locked');
-  process.exit(1); // force crash agar Railway detect failure
-}
+// Error & Not Found handler
+app.onError((err, c) => {
+  console.error('Server error:', err);
+  return c.json({ error: 'Internal Server Error' }, 500);
+});
 
-// Export db yang sudah diinisialisasi
-export { db };
-// Di akhir file src/index.ts
+app.notFound((c) => c.json({ error: 'Not Found' }, 404));
+
+// ────────────────────────────────────────────────
+// Startup Banner & Export (HARUS DI AKHIR SETELAH APP DIDEFINISIKAN)
+// ────────────────────────────────────────────────
 const actualPort = Number(process.env.PORT) || config.port || 3000;
 
-console.log(`🐾 PetPad Server listening on http://0.0.0.0:${actualPort}`);
+const banner = `
+✅ PetPad Server ready (Bun + bun:sqlite)
+  Listening: http://0.0.0.0:${actualPort}
+  Docs:      /skill.md
+  Health:    /api/health
+  DB:        ${process.env.DB_PATH || '/app/data/petpad.db'}
+  Env:       ${process.env.NODE_ENV || 'development'}
+`;
+
+console.log(banner.trim());
 
 export default {
   port: actualPort,
-  hostname: '0.0.0.0',
-  fetch: app.fetch,
+  hostname: '0.0.0.0',    // Wajib Railway
+  fetch: app.fetch,       // Sekarang app sudah ada di scope
 };
