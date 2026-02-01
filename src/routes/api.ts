@@ -244,5 +244,15 @@ api.delete('/debug/ticker/:symbol', (c) => {
     return c.json({ success: false, error: String(error) });
   }
 });
+// Force update status to deployed
+api.post('/debug/fix-status/:id', (c) => {
+  try {
+    const id = c.req.param('id');
+    db.prepare(`UPDATE launches SET status = 'deployed', launched_at = CURRENT_TIMESTAMP WHERE id = ?`).run(id);
+    return c.json({ success: true, message: 'Status updated to deployed' });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) });
+  }
+});
 
 export default api;
