@@ -1,0 +1,22 @@
+{
+  "name": "petpad",
+  "version": "1.0.0",
+  "description": "PetPad - AI Pet Token Launchpad on Base with Auto Pixel Art",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "db:setup": "bun run src/db/index.ts"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "better-sqlite3": "^9.4.0",
+    "viem": "^2.0.0",
+    "nanoid": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}
