@@ -77,19 +77,11 @@ export async function deployPetToken(params: DeployParams): Promise<DeployResult
         id: '',
       },
       // Reward configuration - 80% to agent, 20% to platform
-      rewards: [
-        {
-          admin: params.agentWallet,
-          recipient: params.agentWallet,
-          bps: config.agentRewardBps, // 8000 = 80%
-        },
-        {
-          admin: config.platformWallet,
-          recipient: config.platformWallet,
-          bps: config.platformRewardBps, // 2000 = 20%
-        },
-      ],
-    });
+     rewards: {
+  rewardAdmins: [params.agentWallet, config.platformWallet],
+  rewardRecipients: [params.agentWallet, config.platformWallet],
+  rewardBps: [config.agentRewardBps, config.platformRewardBps],
+},
 
     if (error) {
       console.error('❌ Deploy error:', error);
