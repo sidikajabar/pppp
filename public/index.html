@@ -44,6 +44,49 @@
         }
         .theme-toggle:hover { border-color: var(--primary); }
         
+        .refresh-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--bg-card);
+            padding: 12px 24px;
+            border-radius: 30px;
+            box-shadow: var(--shadow);
+            border: 2px solid var(--border-color);
+            display: none;
+            z-index: 200;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            color: var(--primary);
+        }
+        .refresh-indicator.active {
+            display: flex;
+            animation: slideIn 0.3s;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        .loading-spinner {
+            border: 2px solid var(--border-color);
+            border-top: 2px solid var(--primary);
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .last-update {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-top: 10px;
+        }
+        
         header {
             padding: 20px 40px;
             display: flex;
@@ -170,6 +213,11 @@
     </style>
 </head>
 <body>
+    <div class="refresh-indicator" id="refreshIndicator">
+        <div class="loading-spinner"></div>
+        <span>Updating data...</span>
+    </div>
+    
     <header>
         <a href="/" class="logo">
             <div class="logo-icon">🐾</div>
@@ -238,25 +286,9 @@
 
     <section class="section section-alt" id="tokens">
         <h2 class="section-title">🐾 All Pet Tokens</h2>
-        <div class="tokens-grid">
-            <div class="token-card">
-                <div class="token-card-header"><div class="token-avatar"><canvas id="t1" width="50" height="50"></canvas></div><div class="token-info"><h4>Pixel Doggo</h4><span class="ticker">$PDOGGO</span></div></div>
-                <p class="token-desc">The goodest pixel boy in crypto.</p>
-                <div class="token-stats"><div class="token-stat"><div class="token-stat-value">$125K</div><div class="token-stat-label">Market Cap</div></div><div class="token-stat"><div class="token-stat-value">$45K</div><div class="token-stat-label">24h Volume</div></div></div>
-                <div class="token-card-footer"><a href="#">📊 Chart</a><a href="#">💱 Trade</a></div>
-            </div>
-            <div class="token-card">
-                <div class="token-card-header"><div class="token-avatar" style="border-color:var(--secondary)"><canvas id="t2" width="50" height="50"></canvas></div><div class="token-info"><h4>Cyber Cat</h4><span class="ticker">$CYCAT</span></div></div>
-                <p class="token-desc">Mysterious pixel feline from the digital realm.</p>
-                <div class="token-stats"><div class="token-stat"><div class="token-stat-value">$89K</div><div class="token-stat-label">Market Cap</div></div><div class="token-stat"><div class="token-stat-value">$23K</div><div class="token-stat-label">24h Volume</div></div></div>
-                <div class="token-card-footer"><a href="#">📊 Chart</a><a href="#">💱 Trade</a></div>
-            </div>
-            <div class="token-card">
-                <div class="token-card-header"><div class="token-avatar" style="border-color:var(--accent-yellow)"><canvas id="t3" width="50" height="50"></canvas></div><div class="token-info"><h4>Hamster King</h4><span class="ticker">$HKING</span></div></div>
-                <p class="token-desc">Running the wheel 24/7.</p>
-                <div class="token-stats"><div class="token-stat"><div class="token-stat-value">$67K</div><div class="token-stat-label">Market Cap</div></div><div class="token-stat"><div class="token-stat-value">$12K</div><div class="token-stat-label">24h Volume</div></div></div>
-                <div class="token-card-footer"><a href="#">📊 Chart</a><a href="#">💱 Trade</a></div>
-            </div>
+        <div class="last-update">Live data • Last update: <span id="lastUpdate">-</span></div>
+        <div class="tokens-grid" id="tokensGrid">
+            <!-- Tokens akan diisi secara dinamis oleh JavaScript -->
         </div>
     </section>
 
@@ -270,6 +302,40 @@
     </footer>
 
     <script>
+        // ===== CONFIGURATION =====
+        // DexScreener API - Gratis, tidak perlu API key!
+        const DEXSCREENER_API = 'https://api.dexscreener.com/latest/dex';
+        const REFRESH_INTERVAL = 30000; // 30 detik
+        
+        // Daftar token PetPad yang sudah di-deploy (update dengan contract address yang sebenarnya)
+        const PETPAD_TOKENS = [
+            {
+                name: "Pixel Doggo",
+                symbol: "$PDOGGO",
+                description: "The goodest pixel boy in crypto.",
+                contractAddress: "0xa1F72459dfA10BAD200Ac160eCd78C6b77a747be", // Ganti dengan address sebenarnya
+                petType: "dog",
+                chain: "base" // atau "ethereum", "polygon", dll
+            },
+            {
+                name: "Cyber Cat",
+                symbol: "$CYCAT",
+                description: "Mysterious pixel feline from the digital realm.",
+                contractAddress: "0x1234567890abcdef1234567890abcdef12345678", // Ganti dengan address sebenarnya
+                petType: "cat",
+                chain: "base"
+            },
+            {
+                name: "Hamster King",
+                symbol: "$HKING",
+                description: "Running the wheel 24/7.",
+                contractAddress: "0xabcdef1234567890abcdef1234567890abcdef12", // Ganti dengan address sebenarnya
+                petType: "hamster",
+                chain: "base"
+            }
+        ];
+        
+        // ===== THEME MANAGEMENT =====
         function toggleTheme() {
             const html = document.documentElement;
             const isDark = html.getAttribute('data-theme') === 'dark';
@@ -277,6 +343,7 @@
             localStorage.setItem('theme', isDark ? 'light' : 'dark');
             document.querySelector('.theme-toggle').textContent = isDark ? '🌙' : '☀️';
             drawAllPets();
+            redrawTokenCanvases();
         }
         (function() {
             const saved = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -284,6 +351,7 @@
             document.querySelector('.theme-toggle').textContent = saved === 'dark' ? '☀️' : '🌙';
         })();
 
+        // ===== PIXEL ART DRAWING =====
         const patterns = {
             dog: ['  ####  ','  #@@#  ',' #@..@# ',' #@**@# ','  ####  ',' #@@@@# ','  #  #  '],
             cat: [' ## ## ','#@@#@@#',' #@@@@# ',' #@..@# ','  #**#  ','  ####  ','  #  #  '],
@@ -296,8 +364,10 @@
             hamster: {p:'#FFD93D',s:'#E5A620',a:'#FF6B9D',e:'#2D2D2D'},
             bunny: {p:'#F5F5F5',s:'#E0E0E0',a:'#FFB6C1',e:'#E91E63'},
         };
+        
         function draw(id, type) {
-            const c = document.getElementById(id); if (!c) return;
+            const c = document.getElementById(id); 
+            if (!c) return;
             const ctx = c.getContext('2d');
             const pat = patterns[type] || patterns.dog;
             const col = colors[type] || colors.dog;
@@ -307,34 +377,346 @@
             ctx.fillRect(0, 0, c.width, c.height);
             for (let y = 0; y < pat.length; y++) {
                 for (let x = 0; x < pat[y].length; x++) {
-                    const ch = pat[y][x]; let cl = null;
+                    const ch = pat[y][x]; 
+                    let cl = null;
                     if (ch === '#') cl = col.s;
                     else if (ch === '@') cl = col.p;
                     else if (ch === '.') cl = col.e;
                     else if (ch === '*') cl = col.a;
-                    if (cl) { ctx.fillStyle = cl; ctx.fillRect(x*ps, y*ps, ps, ps); }
+                    if (cl) { 
+                        ctx.fillStyle = cl; 
+                        ctx.fillRect(x*ps, y*ps, ps, ps); 
+                    }
                 }
             }
         }
-        function drawAllPets() { draw('pet1','dog'); draw('pet2','cat'); draw('pet3','hamster'); draw('pet4','bunny'); draw('t1','dog'); draw('t2','cat'); draw('t3','hamster'); }
-        drawAllPets();
+        
+        function drawAllPets() { 
+            draw('pet1','dog'); 
+            draw('pet2','cat'); 
+            draw('pet3','hamster'); 
+            draw('pet4','bunny'); 
+        }
+        
+        let currentTokens = [];
+        function redrawTokenCanvases() {
+            currentTokens.forEach((token, idx) => {
+                draw('token-' + idx, token.petType || 'dog');
+            });
+        }
 
+        // ===== UTILITY FUNCTIONS =====
         function copyAddress() {
             navigator.clipboard.writeText(document.getElementById('platformAddress').textContent);
-            const btn = document.querySelector('.copy-btn'); btn.textContent = '✓';
+            const btn = document.querySelector('.copy-btn'); 
+            btn.textContent = '✓';
             setTimeout(() => btn.textContent = '📋', 2000);
         }
-        function anim(el, end, dur, pre='') {
+        
+        function formatCurrency(value) {
+            if (value >= 1000000) {
+                return '$' + (value / 1000000).toFixed(1) + 'M';
+            } else if (value >= 1000) {
+                return '$' + (value / 1000).toFixed(0) + 'K';
+            }
+            return '$' + value.toFixed(0);
+        }
+        
+        function formatNumber(value) {
+            return new Intl.NumberFormat('en-US').format(value);
+        }
+        
+        function updateTimestamp() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('lastUpdate').textContent = timeString;
+        }
+        
+        function showRefreshIndicator() {
+            const indicator = document.getElementById('refreshIndicator');
+            indicator.classList.add('active');
+            setTimeout(() => {
+                indicator.classList.remove('active');
+            }, 2000);
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ===== ANIMATED COUNTER =====
+        function animateCounter(el, end, dur, pre='', post='') {
             let start = null;
-            const step = (ts) => { if (!start) start = ts; const p = Math.min((ts - start) / dur, 1); el.textContent = pre + Math.floor(p * end).toLocaleString(); if (p < 1) requestAnimationFrame(step); };
+            const step = (ts) => { 
+                if (!start) start = ts; 
+                const p = Math.min((ts - start) / dur, 1); 
+                const val = Math.floor(p * end);
+                el.textContent = pre + val.toLocaleString() + post; 
+                if (p < 1) requestAnimationFrame(step); 
+            };
             requestAnimationFrame(step);
         }
-        setTimeout(() => {
-            anim(document.getElementById('totalMcap'), 847250, 2000, '$');
-            anim(document.getElementById('feesEarned'), 12450, 2000, '$');
-            anim(document.getElementById('petsLaunched'), 47, 1500);
-            anim(document.getElementById('totalVolume'), 234890, 2000, '$');
-        }, 500);
+
+        // ===== DATA FETCHING DENGAN DEXSCREENER =====
+        async function fetchTokenDataFromDex(contractAddress, chain = 'base') {
+            try {
+                const url = `${DEXSCREENER_API}/tokens/${contractAddress}`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    console.warn(`Failed to fetch data for ${contractAddress}`);
+                    return null;
+                }
+                
+                const data = await response.json();
+                
+                // DexScreener mengembalikan array pairs, ambil yang paling liquid
+                if (data.pairs && data.pairs.length > 0) {
+                    // Sort by liquidity, ambil yang terbesar
+                    const bestPair = data.pairs.sort((a, b) => 
+                        parseFloat(b.liquidity?.usd || 0) - parseFloat(a.liquidity?.usd || 0)
+                    )[0];
+                    
+                    return {
+                        marketCap: parseFloat(bestPair.fdv || bestPair.marketCap || 0),
+                        volume24h: parseFloat(bestPair.volume?.h24 || 0),
+                        priceUsd: parseFloat(bestPair.priceUsd || 0),
+                        priceChange24h: parseFloat(bestPair.priceChange?.h24 || 0),
+                        liquidity: parseFloat(bestPair.liquidity?.usd || 0),
+                        pairAddress: bestPair.pairAddress,
+                        dexId: bestPair.dexId
+                    };
+                }
+                
+                return null;
+            } catch (error) {
+                console.error(`Error fetching token data for ${contractAddress}:`, error);
+                return null;
+            }
+        }
+        
+        async function fetchStats() {
+            try {
+                let totalMarketCap = 0;
+                let totalVolume = 0;
+                let successfulFetches = 0;
+                
+                // Fetch data untuk semua tokens
+                const promises = PETPAD_TOKENS.map(token => 
+                    fetchTokenDataFromDex(token.contractAddress, token.chain)
+                );
+                
+                const results = await Promise.all(promises);
+                
+                results.forEach(data => {
+                    if (data) {
+                        totalMarketCap += data.marketCap;
+                        totalVolume += data.volume24h;
+                        successfulFetches++;
+                    }
+                });
+                
+                // Agent fees = 80% dari 0.3% trading fee
+                const agentFees = totalVolume * 0.003 * 0.8;
+                
+                updateStats({
+                    totalMarketCap,
+                    agentFees,
+                    petsLaunched: PETPAD_TOKENS.length,
+                    totalVolume
+                });
+                
+                console.log(`✅ Stats updated: ${successfulFetches}/${PETPAD_TOKENS.length} tokens fetched`);
+                
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+                useMockStats();
+            }
+        }
+        
+        function updateStats(data) {
+            const mcap = data.totalMarketCap || 0;
+            const fees = data.agentFees || 0;
+            const pets = data.petsLaunched || 0;
+            const vol = data.totalVolume || 0;
+            
+            animateCounter(document.getElementById('totalMcap'), mcap, 1500, '$');
+            animateCounter(document.getElementById('feesEarned'), fees, 1500, '$');
+            animateCounter(document.getElementById('petsLaunched'), pets, 1000);
+            animateCounter(document.getElementById('totalVolume'), vol, 1500, '$');
+        }
+        
+        async function fetchTokens() {
+            try {
+                showRefreshIndicator();
+                
+                // Fetch data untuk semua tokens dari DexScreener
+                const tokensWithData = await Promise.all(
+                    PETPAD_TOKENS.map(async (token) => {
+                        const dexData = await fetchTokenDataFromDex(token.contractAddress, token.chain);
+                        
+                        // Build URLs untuk chart dan trade
+                        const chartUrl = dexData?.pairAddress 
+                            ? `https://dexscreener.com/${token.chain}/${dexData.pairAddress}`
+                            : `https://dexscreener.com/${token.chain}/${token.contractAddress}`;
+                        
+                        const tradeUrl = token.chain === 'base'
+                            ? `https://app.uniswap.org/swap?outputCurrency=${token.contractAddress}&chain=base`
+                            : `https://app.uniswap.org/swap?outputCurrency=${token.contractAddress}`;
+                        
+                        return {
+                            ...token,
+                            marketCap: dexData?.marketCap || 0,
+                            volume24h: dexData?.volume24h || 0,
+                            priceUsd: dexData?.priceUsd || 0,
+                            priceChange24h: dexData?.priceChange24h || 0,
+                            chartUrl,
+                            tradeUrl
+                        };
+                    })
+                );
+                
+                // Sort by market cap descending
+                tokensWithData.sort((a, b) => b.marketCap - a.marketCap);
+                
+                displayTokens(tokensWithData);
+                updateTimestamp();
+                
+                console.log('✅ Tokens data updated successfully');
+                
+            } catch (error) {
+                console.error('Error fetching tokens:', error);
+                useMockTokens();
+            }
+        }
+        
+        function displayTokens(tokens) {
+            const grid = document.getElementById('tokensGrid');
+            currentTokens = tokens;
+            
+            if (tokens.length === 0) {
+                grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 18px;">No tokens deployed yet. Be the first to launch! 🚀</p>';
+                return;
+            }
+            
+            grid.innerHTML = tokens.map((token, idx) => {
+                const borderColors = ['var(--primary)', 'var(--secondary)', 'var(--accent-yellow)', 'var(--accent-mint)'];
+                const borderColor = borderColors[idx % borderColors.length];
+                
+                return `
+                    <div class="token-card">
+                        <div class="token-card-header">
+                            <div class="token-avatar" style="border-color:${borderColor}">
+                                <canvas id="token-${idx}" width="50" height="50"></canvas>
+                            </div>
+                            <div class="token-info">
+                                <h4>${escapeHtml(token.name)}</h4>
+                                <span class="ticker">${escapeHtml(token.symbol)}</span>
+                            </div>
+                        </div>
+                        <p class="token-desc">${escapeHtml(token.description)}</p>
+                        <div class="token-stats">
+                            <div class="token-stat">
+                                <div class="token-stat-value">${formatCurrency(token.marketCap || 0)}</div>
+                                <div class="token-stat-label">Market Cap</div>
+                            </div>
+                            <div class="token-stat">
+                                <div class="token-stat-value">${formatCurrency(token.volume24h || 0)}</div>
+                                <div class="token-stat-label">24h Volume</div>
+                            </div>
+                        </div>
+                        <div class="token-card-footer">
+                            <a href="${token.chartUrl || '#'}">📊 Chart</a>
+                            <a href="${token.tradeUrl || '#'}">💱 Trade</a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Redraw all canvases after DOM update
+            setTimeout(() => {
+                tokens.forEach((token, idx) => {
+                    draw('token-' + idx, token.petType || 'dog');
+                });
+            }, 50);
+        }
+
+        // ===== MOCK DATA (untuk demo/testing) =====
+        function useMockStats() {
+            updateStats({
+                totalMarketCap: 847250,
+                agentFees: 12450,
+                petsLaunched: 47,
+                totalVolume: 234890
+            });
+        }
+        
+        function useMockTokens() {
+            const mockTokens = [
+                {
+                    name: "Pixel Doggo",
+                    symbol: "$PDOGGO",
+                    description: "The goodest pixel boy in crypto.",
+                    marketCap: 125000,
+                    volume24h: 45000,
+                    petType: "dog",
+                    chartUrl: "https://dexscreener.com/base/pdoggo",
+                    tradeUrl: "https://app.uniswap.org"
+                },
+                {
+                    name: "Cyber Cat",
+                    symbol: "$CYCAT",
+                    description: "Mysterious pixel feline from the digital realm.",
+                    marketCap: 89000,
+                    volume24h: 23000,
+                    petType: "cat",
+                    chartUrl: "https://dexscreener.com/base/cycat",
+                    tradeUrl: "https://app.uniswap.org"
+                },
+                {
+                    name: "Hamster King",
+                    symbol: "$HKING",
+                    description: "Running the wheel 24/7.",
+                    marketCap: 67000,
+                    volume24h: 12000,
+                    petType: "hamster",
+                    chartUrl: "https://dexscreener.com/base/hking",
+                    tradeUrl: "https://app.uniswap.org"
+                }
+            ];
+            
+            displayTokens(mockTokens);
+            updateTimestamp();
+        }
+
+        // ===== INITIALIZATION =====
+        async function init() {
+            // Draw initial pets
+            drawAllPets();
+            
+            // Load data
+            await fetchStats();
+            await fetchTokens();
+            
+            // Setup auto-refresh
+            setInterval(async () => {
+                await fetchStats();
+                await fetchTokens();
+            }, REFRESH_INTERVAL);
+        }
+        
+        // Start when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
     </script>
 </body>
 </html>
