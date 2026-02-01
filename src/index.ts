@@ -77,3 +77,13 @@ try {
 
 // Export db yang sudah diinisialisasi
 export { db };
+// Di akhir file src/index.ts
+const actualPort = Number(process.env.PORT) || config.port || 3000;
+
+console.log(`🐾 PetPad Server listening on http://0.0.0.0:${actualPort}`);
+
+export default {
+  port: actualPort,
+  hostname: '0.0.0.0',
+  fetch: app.fetch,
+};
