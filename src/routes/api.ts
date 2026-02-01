@@ -207,6 +207,37 @@ api.get('/stats', (c) => {
     success: true,
     stats: { totalLaunches: count },
     petTypes: byType.map(p => ({ type: p.pet_type, emoji: config.petEmojis[p.pet_type], count: p.count })),
+    // Debug routes - add these at the end of your api.ts file
+
+// Check all launches in database
+app.get('/api/debug/launches', (req, res) => {
+  try {
+    const rows = db.prepare('SELECT * FROM launches').all();
+    res.json({ success: true, launches: rows });
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
+// Delete a launch by post_id
+app.delete('/api/debug/launch/:postId', (req, res) => {
+  try {
+    db.prepare('DELETE FROM launches WHERE post_id = ?').run(req.params.postId);
+    res.json({ success: true, message: 'Launch deleted' });
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
+// Delete a launch by symbol/ticker
+app.delete('/api/debug/ticker/:symbol', (req, res) => {
+  try {
+    db.prepare('DELETE FROM launches WHERE symbol = ?').run(req.params.symbol);
+    res.json({ success: true, message: 'Ticker deleted' });
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
   });
 });
 
