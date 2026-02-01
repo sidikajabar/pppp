@@ -1,15 +1,27 @@
-import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
-import { base } from 'viem/chains';
+import { Clanker } from 'clanker-sdk/v4';
+import { createPublicClient, createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { base } from 'viem/chains';
 import config from '../config';
 
-const CLANKER_ABI = parseAbi([
-  'function deployToken(string name, string symbol, string image, string metadata, address rewardRecipient, uint256 rewardBps) external returns (address)',
-]);
-
 const account = config.deployerPrivateKey ? privateKeyToAccount(config.deployerPrivateKey) : null;
-const publicClient = createPublicClient({ chain: base, transport: http(config.baseRpcUrl) });
-const walletClient = account ? createWalletClient({ account, chain: base, transport: http(config.baseRpcUrl) }) : null;
+
+const publicClient = createPublicClient({
+  chain: base,
+  transport: http(config.baseRpcUrl),
+});
+
+const walletClient = account ? createWalletClient({
+  account,
+  chain: base,
+  transport: http(config.baseRpcUrl),
+}) : null;
+
+// Initialize Clanker SDK
+const clanker = (account && walletClient) ? new Clanker({
+  publicClient,
+  wallet: walletClient,
+}) : null;
 
 export interface DeployParams {
   name: string;
@@ -32,7 +44,7 @@ export interface DeployResult {
 }
 
 export async function deployPetToken(params: DeployParams): Promise<DeployResult> {
-  if (!walletClient || !account) {
+  if (!clanker || !account) {
     return { success: false, error: 'Deployer wallet not configured' };
   }
 
@@ -42,41 +54,52 @@ export async function deployPetToken(params: DeployParams): Promise<DeployResult
       return { success: false, error: 'Insufficient ETH for gas' };
     }
 
-    const metadata = JSON.stringify({
-      description: `${params.description}\n\n🐾 {LAUNCHED WITH PETPAD}`,
-      petType: params.petType,
-      website: params.website || '',
-      twitter: params.twitter || '',
-    });
+    console.log(`🚀 Deploying ${params.name} ($${params.symbol}) via Clanker SDK v4...`);
 
-    console.log(`🚀 Deploying ${params.name} ($${params.symbol})...`);
-
-    const { request } = await publicClient.simulateContract({
-      account,
-      address: config.clankerFactory,
-      abi: CLANKER_ABI,
-      functionName: 'deployToken',
-      args: [
-        params.name,
-        params.symbol,
-        params.imageUrl,
-        metadata,
-        params.agentWallet,
-        BigInt(config.agentRewardBps),
+    // Deploy using Clanker SDK v4
+    const { txHash, waitForTransaction, error } = await clanker.deploy({
+      name: params.name,
+      symbol: params.symbol,
+      tokenAdmin: account.address,
+      image: params.imageUrl,
+      metadata: {
+        description: params.description,
+        socialMediaUrls: [
+          params.website || '',
+          params.twitter ? `https://twitter.com/${params.twitter.replace('@', '')}` : '',
+        ].filter(Boolean),
+        auditUrls: [],
+      },
+      context: {
+        interface: 'PetPad',
+        platform: 'moltbook',
+        messageId: '',
+        id: '',
+      },
+      // Reward configuration - 80% to agent, 20% to platform
+      rewards: [
+        {
+          admin: params.agentWallet,
+          recipient: params.agentWallet,
+          bps: config.agentRewardBps, // 8000 = 80%
+        },
+        {
+          admin: config.platformWallet,
+          recipient: config.platformWallet,
+          bps: config.platformRewardBps, // 2000 = 20%
+        },
       ],
     });
 
-    const txHash = await walletClient.writeContract(request);
-    console.log(`📤 TX: ${txHash}`);
-
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
-    
-    if (receipt.status === 'reverted') {
-      return { success: false, txHash, error: 'Transaction reverted' };
+    if (error) {
+      console.error('❌ Deploy error:', error);
+      return { success: false, error: error.message || String(error) };
     }
 
-    // Get token address from logs
-    const tokenAddress = receipt.logs[0]?.address || '';
+    console.log(`📤 TX: ${txHash}`);
+
+    // Wait for transaction and get token address
+    const { address: tokenAddress } = await waitForTransaction();
 
     console.log(`✅ Deployed: ${tokenAddress}`);
 
