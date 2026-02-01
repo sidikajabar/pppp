@@ -417,10 +417,19 @@
         const DEXSCREENER_API = 'https://api.dexscreener.com/latest/dex';
         const REFRESH_INTERVAL = 30000; // 30 seconds
         
-        // ===== TOKEN CONFIGURATION =====
-        // Add new tokens here when they are deployed!
-        // Each token needs: name, symbol, description, contractAddress, petType, and chain
-        const PETPAD_TOKENS = [
+        // ===== DEPLOYER CONFIGURATION =====
+        // SIMPLE SETUP: Just add your deployed token contract addresses here!
+        // The system will automatically fetch names, symbols, and data from DexScreener
+        const DEPLOYED_TOKEN_ADDRESSES = [
+            "0x6642520B144Ede23Ce34B9B1DD769ED236bEb68D", // Token 1 - Pet Pad
+            "0x8D731472e75E4087FDb31B31871F1cF6E6bd9a30", // Token 2
+            "0x80cD70a079eb3E269eA9b8099483b19357ba1f50", // Token 3
+        ];
+        
+        const DEPLOYER_CHAIN = "base"; // Chain where tokens are deployed
+        
+        // Alternative: Full manual configuration (use if auto-fetch doesn't work)
+        const MANUAL_TOKENS = [
             {
                 name: "Pet Pad",
                 symbol: "$PETPAD",
@@ -429,16 +438,20 @@
                 petType: "dog",
                 chain: "base"
             }
-            // Add more tokens here as they are deployed:
+            // Add more tokens manually if needed:
             // {
-            //     name: "Your Pet Name",
+            //     name: "Token Name",
             //     symbol: "$SYMBOL",
-            //     description: "Description of your pet token",
+            //     description: "Description",
             //     contractAddress: "0x...",
-            //     petType: "cat", // Options: dog, cat, hamster, bunny
+            //     petType: "cat", // dog, cat, hamster, or bunny
             //     chain: "base"
             // }
         ];
+        
+        // Cache for discovered tokens
+        let discoveredTokens = [];
+        let useManualTokens = false; // Will auto-detect based on what works
         
         // ===== THEME MANAGEMENT =====
         function toggleTheme() {
@@ -575,6 +588,80 @@
             animateCounter(document.getElementById('totalVolume'), data.totalVolume, 1000, '$');
         }
 
+        // ===== AUTO TOKEN DISCOVERY =====
+        async function discoverTokensFromAddresses() {
+            try {
+                console.log(`🔍 Fetching info for ${DEPLOYED_TOKEN_ADDRESSES.length} token addresses...`);
+                
+                const tokens = await Promise.all(
+                    DEPLOYED_TOKEN_ADDRESSES.map(async (address) => {
+                        try {
+                            // Fetch token data from DexScreener
+                            const dexData = await fetchTokenDataFromDex(address, DEPLOYER_CHAIN);
+                            
+                            if (dexData && dexData.hasData && dexData.tokenInfo) {
+                                // Successfully got token info from DexScreener
+                                return {
+                                    name: dexData.tokenInfo.name || "Pet Token",
+                                    symbol: dexData.tokenInfo.symbol || "$PET",
+                                    description: dexData.tokenInfo.description || "Pet token on Base",
+                                    contractAddress: address,
+                                    petType: guessPetType(dexData.tokenInfo.name || dexData.tokenInfo.symbol),
+                                    chain: DEPLOYER_CHAIN
+                                };
+                            }
+                            
+                            // Fallback if no data yet
+                            return {
+                                name: "Pet Token",
+                                symbol: "$PET",
+                                description: "Pet token on Base",
+                                contractAddress: address,
+                                petType: 'dog',
+                                chain: DEPLOYER_CHAIN
+                            };
+                        } catch (e) {
+                            console.warn(`⚠️ Could not fetch info for ${address}`);
+                            return null;
+                        }
+                    })
+                );
+                
+                // Filter out null results
+                const validTokens = tokens.filter(t => t !== null);
+                
+                if (validTokens.length > 0) {
+                    console.log(`✅ Created token list from ${validTokens.length} addresses`);
+                    discoveredTokens = validTokens;
+                    useManualTokens = false;
+                    return validTokens;
+                }
+                
+                console.log('⚠️ No valid tokens found, using manual list');
+                useManualTokens = true;
+                return MANUAL_TOKENS;
+                
+            } catch (error) {
+                console.warn('⚠️ Auto-discovery failed, using manual token list');
+                console.error(error);
+                useManualTokens = true;
+                return MANUAL_TOKENS;
+            }
+        }
+        
+        // Guess pet type from token name/symbol
+        function guessPetType(text) {
+            const lower = text.toLowerCase();
+            if (lower.includes('dog') || lower.includes('doge') || lower.includes('pup') || lower.includes('shib')) return 'dog';
+            if (lower.includes('cat') || lower.includes('kitty') || lower.includes('feline')) return 'cat';
+            if (lower.includes('hamster') || lower.includes('ham')) return 'hamster';
+            if (lower.includes('bunny') || lower.includes('rabbit')) return 'bunny';
+            
+            // Random selection if can't determine
+            const types = ['dog', 'cat', 'hamster', 'bunny'];
+            return types[Math.floor(Math.random() * types.length)];
+        }
+
         // ===== DATA FETCHING WITH DEXSCREENER =====
         async function fetchTokenDataFromDex(contractAddress, chain = 'base') {
             try {
@@ -617,7 +704,12 @@
                         liquidity: parseFloat(bestPair.liquidity?.usd || 0),
                         pairAddress: bestPair.pairAddress,
                         dexId: bestPair.dexId,
-                        hasData: true
+                        hasData: true,
+                        tokenInfo: {
+                            name: bestPair.baseToken?.name,
+                            symbol: bestPair.baseToken?.symbol,
+                            description: bestPair.info?.description || bestPair.info?.websites?.[0]
+                        }
                     };
                 }
                 
@@ -637,8 +729,11 @@
                 let totalVolume = 0;
                 let tokensWithData = 0;
                 
+                // Get token list (either discovered or manual)
+                const tokenList = useManualTokens ? MANUAL_TOKENS : discoveredTokens;
+                
                 // Fetch data for all tokens
-                const promises = PETPAD_TOKENS.map(token => 
+                const promises = tokenList.map(token => 
                     fetchTokenDataFromDex(token.contractAddress, token.chain)
                 );
                 
@@ -653,12 +748,14 @@
                     }
                 });
                 
-                const agentFees = totalVolume * 0.8; // 80% to agents
+                // Agent fees = 80% of trading fees (assuming 0.3% standard DEX fee on volume)
+                // Formula: Volume × 0.003 (0.3% trading fee) × 0.8 (80% to agents) = Volume × 0.0024
+                const agentFees = totalVolume * 0.0024;
                 
                 updateStats({
                     totalMarketCap,
                     agentFees,
-                    petsLaunched: PETPAD_TOKENS.length,
+                    petsLaunched: tokenList.length,
                     totalVolume
                 });
                 
@@ -672,7 +769,8 @@
                     statusEl.innerHTML = '<span class="data-status-dot"></span>Awaiting deployment';
                 }
                 
-                console.log(`📊 Stats updated: ${tokensWithData}/${PETPAD_TOKENS.length} tokens with live data`);
+                console.log(`📊 Stats updated: ${tokensWithData}/${tokenList.length} tokens with live data`);
+                console.log(`💰 Agent fees (24h): $${agentFees.toFixed(2)} (from $${totalVolume.toFixed(2)} volume)`);
                 
             } catch (error) {
                 console.error('❌ Error fetching stats:', error);
@@ -684,11 +782,20 @@
                 console.log('🔄 Refreshing token data...');
                 showRefreshIndicator();
                 
+                // Get token list (either discovered or manual)
+                const tokenList = useManualTokens ? MANUAL_TOKENS : discoveredTokens;
+                
+                if (tokenList.length === 0) {
+                    console.log('⚠️ No tokens configured yet');
+                    displayTokens([]);
+                    return;
+                }
+                
                 let hasAnyLiveData = false;
                 
                 // Fetch data for all tokens from DexScreener
                 const tokensWithData = await Promise.all(
-                    PETPAD_TOKENS.map(async (token) => {
+                    tokenList.map(async (token) => {
                         const dexData = await fetchTokenDataFromDex(token.contractAddress, token.chain);
                         
                         if (dexData?.hasData) {
@@ -719,7 +826,7 @@
                 
                 // Show CORS warning if no tokens have live data
                 const corsWarning = document.getElementById('corsWarning');
-                if (!hasAnyLiveData && PETPAD_TOKENS.length > 0) {
+                if (!hasAnyLiveData && tokenList.length > 0) {
                     corsWarning.style.display = 'block';
                 } else {
                     corsWarning.style.display = 'none';
@@ -735,7 +842,8 @@
                 
             } catch (error) {
                 console.error('❌ Error fetching tokens:', error);
-                displayTokens(PETPAD_TOKENS.map(token => ({ ...token, hasData: false })));
+                const tokenList = useManualTokens ? MANUAL_TOKENS : discoveredTokens;
+                displayTokens(tokenList.map(token => ({ ...token, hasData: false })));
             }
         }
         
@@ -799,10 +907,22 @@
         // ===== INITIALIZATION =====
         async function init() {
             console.log('🚀 Initializing PetPad...');
-            console.log(`📝 Configured tokens: ${PETPAD_TOKENS.length}`);
+            console.log(`📝 Token addresses configured: ${DEPLOYED_TOKEN_ADDRESSES.length}`);
             
             // Draw initial pets
             drawAllPets();
+            
+            // Try to build token list from addresses
+            if (DEPLOYED_TOKEN_ADDRESSES.length > 0) {
+                console.log('🔍 Building token list from configured addresses...');
+                await discoverTokensFromAddresses();
+            } else {
+                console.log('📝 Using manual token configuration');
+                useManualTokens = true;
+            }
+            
+            const tokenCount = useManualTokens ? MANUAL_TOKENS.length : discoveredTokens.length;
+            console.log(`✅ Token list ready: ${tokenCount} tokens`);
             
             // Load data
             await fetchStats();
