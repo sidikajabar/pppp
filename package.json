@@ -13,6 +13,7 @@
     "hono": "^4.6.5",
     "viem": "^2.21.1",
     "nanoid": "^5.0.9"
+    "clanker-sdk": "^4.1.26"
   },
   "devDependencies": {
     "@types/bun": "latest",
